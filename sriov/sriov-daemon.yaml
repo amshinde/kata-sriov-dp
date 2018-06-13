@@ -1,0 +1,101 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sriov-dp-sa
+  namespace: default
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: sriov-dp-rb
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+- kind: ServiceAccount
+  name: sriov-dp-sa
+  namespace: default
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: sriov-device-plugin
+spec:
+  selector:
+      matchLabels:
+        name: sriov-device-plugin
+  template:
+    metadata:
+      labels:
+        name: sriov-device-plugin
+    spec:
+      serviceAccountName: sriov-dp-sa 
+      containers:
+      - name: sriov-device-plugin
+        image: amshinde/multus-sriov-shim-device-plugin
+        volumeMounts:
+        - name: optbin
+          mountPath: /opt/cni/bin
+        - name: usrbin
+          mountPath: /host/usr/bin
+        - name: multus-conf
+          mountPath: /tmp/cni/net.d
+        - mountPath: /var/lib/kubelet/device-plugins/ 
+          name: devicesock 
+          readOnly: false
+        - mountPath: /sys/class/net
+          name: net
+          readOnly: true
+        - mountPath: /var/run/dbus
+          name: dbus
+        - mountPath: /run/systemd
+          name: systemdvol
+        - mountPath: /etc/cni/net.d
+          name: etccni
+        command: [ "sh", "-c" ]
+        args:
+        - cp /host/usr/bin/kubelet /host/usr/bin/kubelet_backup;
+          cp /tmp/cni/bin/multus /opt/cni/bin/;
+          cp /tmp/cni/bin/sriov /opt/cni/bin/;
+          cp /tmp/cni/bin/cnishim /opt/cni/bin/;
+          cp /tmp/cni/net.d/* /etc/cni/net.d/;
+          systemctl stop kubelet;
+          cp /tmp/bin/kubelet /host/usr/bin/kubelet;
+          echo "Restarting systemd";
+          systemctl daemon-reload;
+          systemctl restart crio;
+          systemctl restart kubelet;
+          echo "Starting device plugin";
+          sleep 5;
+          /tmp/bin/sriovdp --logtostderr -v 10;
+          echo "exit status $?";
+          while true;
+          do sleep 36000; done;
+      volumes:
+      - name: optbin
+        hostPath:
+          path: /opt/cni/bin
+      - name: usrbin
+        hostPath:
+          path: /usr/bin
+      - name: devicesock 
+        hostPath:
+          path: /var/lib/kubelet/device-plugins/
+      - name: net
+        hostPath:
+          path: /sys/class/net
+      - name: systemdvol 
+        hostPath:
+          path: /run/systemd
+      - name: multus-conf
+        configMap:
+          name: multus-conf
+      - name: etccni
+        hostPath:
+          path: /etc/cni/net.d
+      - name: dbus
+        hostPath:
+          path: /var/run/dbus
+      hostNetwork: true
+      hostPID: true
