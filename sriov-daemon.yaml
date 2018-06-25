@@ -43,7 +43,7 @@ spec:
       serviceAccountName: sriov-dp-sa 
       initContainers:
       - name: init-sriov-dp
-        image: amshinde/sriovt
+        image: amshinde/multus-sriov-shim-device-plugin
         command: [ "bash", "-c" ]
         args:
         - cp /host/usr/bin/kubelet /host/usr/bin/kubelet_backup;
